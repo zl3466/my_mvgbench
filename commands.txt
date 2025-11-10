@@ -1,0 +1,39 @@
+++++++++++++++++++ cuda 118 image +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+srun \
+--partition interactive --gpus=1 --cpus-per-task=16 \
+--container-image=/lustre/fsw/portfolios/nvr/users/ymingli/dockers/cu118.sqsh \
+--container-mounts=/lustre/:/lustre/,/lustre/fsw/portfolios/nvr/users/ymingli/miniconda3:/home/ymingli/miniconda3 \
+--time 240 \
+--account=nvr_av_verifvalid --pty bash
+
+
+# eval without cam pose
+
+# 3DGS fitting 
+python run_mvfit.py "/home/zl3466/Documents/dataset/GenBlocks/final_state/*" --white_background
+
+python eval/align_3dgs.py --folder_tgt output/consistency/final_state/even \
+  --folder_src output/consistency/final_state/odd
+
+# Re-render with the alignment parameters, with the --normalize_gs flag 
+python render.py --normalize_gs --quiet --resolution 256 -m "output/consistency/GenBlocks_tgt/*"
+
+# Evaluate
+python eval/eval_consistency.py \
+  --name_odd output/consistency/syncdreamer+co3d2seq-mvdfusion-v16-manual+i000_odd \
+  --name_even output/consistency/syncdreamer+co3d2seq-mvdfusion-v16-manual+i000_even \
+  --test_name align-icp # use new rendering to evaluate 
+
+
+
+
+
+
+
+# 3DGS fitting 
+python run_mvfit.py "/home/zl3466/Documents/dataset/MVGBench/example/sample_*/*" --white_background
+
+# evaluation
+python eval/eval_consistency.py \
+  --name_odd output/consistency/sample_odd \
+  --name_even output/consistency/sample_even

@@ -1,0 +1,12 @@
+eval without cam pose
+
+# 3DGS fitting
+python run_mvfit.py "/home/zl3466/Documents/dataset/MVGBench/example/syncdreamer+mvdfusion-v16-elev030-amb1.0+i000+sel11v4_*/*" --white_background
+
+# evaluation
+python eval/eval_consistency.py \
+  --name_odd output/consistency/syncdreamer+mvdfusion-v16-elev030-amb1.0+i000+sel11v4_odd \
+  --name_even output/consistency/syncdreamer+mvdfusion-v16-elev030-amb1.0+i000+sel11v4_even
+
+
+
