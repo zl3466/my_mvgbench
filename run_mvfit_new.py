@@ -32,12 +32,21 @@ def process_single_sample(folder, args_dict, worker_id, port):
     
     print(f"Worker {worker_id} running train command: {' '.join(train_cmd)}", flush=True)
     
-    # Run training - don't capture output to see it in real-time, but redirect stderr
+    # Run training - don't capture output to avoid buffer blocking
+    # If debug mode, let output go to terminal; otherwise redirect to /dev/null
     try:
-        result = subprocess.run(train_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
-                               text=True, timeout=3600)  # 1 hour timeout per training
+        if args_dict.get('debug', False):
+            # In debug mode, let output go to terminal
+            result = subprocess.run(train_cmd, timeout=3600)
+        else:
+            # In quiet mode, redirect output to avoid buffer blocking
+            with open(os.devnull, 'w') as devnull:
+                result = subprocess.run(train_cmd, stdout=devnull, stderr=subprocess.PIPE, 
+                                       text=True, timeout=3600)
+                if result.returncode != 0 and result.stderr:
+                    print(f"Error training {folder_name} (worker {worker_id}): {result.stderr[:500]}", flush=True)
+        
         if result.returncode != 0:
-            print(f"Error training {folder_name} (worker {worker_id}): {result.stderr[:500]}", flush=True)
             return False
     except subprocess.TimeoutExpired:
         print(f"Timeout training {folder_name} (worker {worker_id})", flush=True)
@@ -55,10 +64,16 @@ def process_single_sample(folder, args_dict, worker_id, port):
     print(f"Worker {worker_id} running render command: {' '.join(render_cmd)}", flush=True)
     
     try:
-        result = subprocess.run(render_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
-                               text=True, timeout=600)  # 10 min timeout per render
+        if args_dict.get('debug', False):
+            result = subprocess.run(render_cmd, timeout=600)
+        else:
+            with open(os.devnull, 'w') as devnull:
+                result = subprocess.run(render_cmd, stdout=devnull, stderr=subprocess.PIPE, 
+                                       text=True, timeout=600)
+                if result.returncode != 0 and result.stderr:
+                    print(f"Error rendering {folder_name} (worker {worker_id}): {result.stderr[:500]}", flush=True)
+        
         if result.returncode != 0:
-            print(f"Error rendering {folder_name} (worker {worker_id}): {result.stderr[:500]}", flush=True)
             return False
     except subprocess.TimeoutExpired:
         print(f"Timeout rendering {folder_name} (worker {worker_id})", flush=True)
@@ -149,9 +164,14 @@ def run_combined_parallel(args):
         print(f"NOTE: Multiple processes sharing one GPU may serialize if GPU memory is limited.")
         print(f"      Each training process needs GPU memory - monitor with 'nvidia-smi' to verify parallel execution.\n")
         
-        # Split folders into batches
+        # Split folders into batches - ensure we only create as many batches as workers
         batch_size = max(1, len(folders) // num_workers)
-        batches = [folders[i:i + batch_size] for i in range(0, len(folders), batch_size)]
+        batches = []
+        for i in range(num_workers):
+            start_idx = i * batch_size
+            end_idx = start_idx + batch_size if i < num_workers - 1 else len(folders)
+            if start_idx < len(folders):
+                batches.append(folders[start_idx:end_idx])
         
         # Print batch distribution
         print(f"Batch distribution:")
