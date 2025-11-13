@@ -37,3 +37,43 @@ python run_mvfit.py "/home/zl3466/Documents/dataset/MVGBench/example/sample_*/*"
 python eval/eval_consistency.py \
   --name_odd output/consistency/sample_odd \
   --name_even output/consistency/sample_even
+
+
+
+# nyu hpc commands
+
+ssh by2593@greene.hpc.nyu.edu
+cd /scratch/by2593
+
+srun --pty --nodes=1 --ntasks-per-node=1 --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=2:00:00 --account=pr_116_tandon_advanced  /bin/bash
+
+conda create -p /scratch/by2593/conda/envs/mvgbench python=3.10 -y
+conda activate /scratch/by2593/conda/envs/mvgbench
+
+# download dataset
+wget "https://edmond-objstor-prod.s3.gwdg.de/10.17617/3.BXSOPR/1979ec57bd8-d690657823ff?response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27example-eval.zip&response-content-type=application%2Fzip&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20251112T175343Z&X-Amz-SignedHeaders=host&X-Amz-Credential=IH8939PKBM3VLMPVPGKY%2F20251112%2Fdataverse%2Fs3%2Faws4_request&X-Amz-Expires=86400&X-Amz-Signature=7c15ee68190a97fb0669f61a67c3666b0563371ea3d1230131e27d6eacbd8f2d" -O /scratch/by2593/zl3466/dataset/mvgbench/example-eval.zip
+unzip /scratch/by2593/zl3466/dataset/mvgbench/example-eval.zip -d /vast/by2593/zl3466/dataset/mvgbench
+
+# download model ckpt
+huggingface-cli download --resume-download --local-dir-use-symlinks False OpenGVLab/InternVL2_5-78B --local-dir /vast/by2593/zl3466/model/InternVL2_5-78B
+python eval/eval_consistency.py \
+  --name_odd output/consistency/syncdreamer+mvdfusion-v16-elev030-amb1.0+i000+sel11v4_odd \
+  --name_even output/consistency/syncdreamer+mvdfusion-v16-elev030-amb1.0+i000+sel11v4_even
+
+# run benchmark
+# generate vlm annotation for images
+python images2text.py -d /home/ubuntu/efs/static/mvimgnet230 -rn crops --save_name mvimgnet230
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/example/mini/mini_*/*" --white_background
+python eval/eval_consistency.py \
+  --name_odd output/consistency/mini_odd \
+  --name_even output/consistency/mini_even
+
+python eval/eval_vlm.py --name_even output/consistency/mini_even --path /vast/by2593/zl3466/model/InternVL2_5-78B
+
+
+
+
+
+
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/final_state/ by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/final_state/
