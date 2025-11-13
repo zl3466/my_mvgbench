@@ -30,16 +30,11 @@ def process_single_sample(folder, args_dict, worker_id, port):
     if args_dict.get('white_background', False):
         train_cmd.append('--white_background')
     
-    print(f"Worker {worker_id} running train command: {' '.join(train_cmd)}", flush=True)
-    
     # Run training - don't capture output to avoid buffer blocking
-    # If debug mode, let output go to terminal; otherwise redirect to /dev/null
     try:
         if args_dict.get('debug', False):
-            # In debug mode, let output go to terminal
             result = subprocess.run(train_cmd, timeout=3600)
         else:
-            # In quiet mode, redirect output to avoid buffer blocking
             with open(os.devnull, 'w') as devnull:
                 result = subprocess.run(train_cmd, stdout=devnull, stderr=subprocess.PIPE, 
                                        text=True, timeout=3600)
@@ -60,8 +55,6 @@ def process_single_sample(folder, args_dict, worker_id, port):
                   '--elev_offset', str(args_dict.get('elev_offset', -10))]
     if not args_dict.get('debug', False):
         render_cmd.append('--quiet')
-    
-    print(f"Worker {worker_id} running render command: {' '.join(render_cmd)}", flush=True)
     
     try:
         if args_dict.get('debug', False):
@@ -90,35 +83,18 @@ def process_sample_batch(args_tuple):
     worker_port = base_port + worker_id
     
     try:
-        # Log worker start and signal that worker is alive
-        print(f"Worker {worker_id} started processing {len(sample_folders)} samples (PID: {os.getpid()})", flush=True)
-        if progress_queue:
-            progress_queue.put(('_worker_started', worker_id))
-        
         for folder in sample_folders:
             folder_name = osp.basename(folder)
-            print(f"Worker {worker_id} starting {folder_name}...", flush=True)
-            start_time = time.time()
-            
             try:
                 success = process_single_sample(folder, args_dict, worker_id, worker_port)
-                elapsed = time.time() - start_time
-                print(f"Worker {worker_id} completed {folder_name} in {elapsed:.1f}s", flush=True)
-                
                 if progress_queue:
                     progress_queue.put((folder_name, success))
             except Exception as e:
                 print(f"Worker {worker_id} ERROR processing {folder_name}: {e}", flush=True)
-                import traceback
-                traceback.print_exc()
                 if progress_queue:
                     progress_queue.put((folder_name, False))
-        
-        print(f"Worker {worker_id} finished all samples", flush=True)
     except Exception as e:
         print(f"Worker {worker_id} FATAL ERROR: {e}", flush=True)
-        import traceback
-        traceback.print_exc()
 
 def run_combined_parallel(args):
     """Process samples in parallel using multiple workers on the same GPU"""
@@ -160,9 +136,7 @@ def run_combined_parallel(args):
             num_workers = len(folders)
     
     if num_workers > 1:
-        print(f"Available CPUs: {available_cpus}, Using {num_workers} workers on GPU 0")
-        print(f"NOTE: Multiple processes sharing one GPU may serialize if GPU memory is limited.")
-        print(f"      Each training process needs GPU memory - monitor with 'nvidia-smi' to verify parallel execution.\n")
+        print(f"Using {num_workers} workers on GPU 0\n")
         
         # Split folders into batches - ensure we only create as many batches as workers
         batch_size = max(1, len(folders) // num_workers)
@@ -172,13 +146,6 @@ def run_combined_parallel(args):
             end_idx = start_idx + batch_size if i < num_workers - 1 else len(folders)
             if start_idx < len(folders):
                 batches.append(folders[start_idx:end_idx])
-        
-        # Print batch distribution
-        print(f"Batch distribution:")
-        for i, batch in enumerate(batches):
-            batch_names = [osp.basename(f) for f in batch]
-            print(f"  Worker {i}: {len(batch)} samples - {', '.join(batch_names[:3])}{'...' if len(batch_names) > 3 else ''}")
-        print()
         
         # Setup parallel processing with Manager for Queue sharing
         base_port = 6000
@@ -190,58 +157,27 @@ def run_combined_parallel(args):
         with mp.Pool(processes=num_workers) as pool:
             result = pool.map_async(process_sample_batch, worker_args)
             
-            # Monitor progress with timeout
+            # Monitor progress
             completed = 0
-            no_progress_count = 0
-            max_no_progress = 100  # 10 seconds without progress before checking if workers are stuck
-            
-            # Wait a moment for workers to start
-            print("Waiting for workers to start...", flush=True)
-            time.sleep(2)
-            
             with tqdm(total=len(folders), desc="Processing samples") as pbar:
-                workers_started = set()
                 while completed < len(folders):
                     try:
-                        # Try to get progress update with timeout
                         try:
-                            folder_name, status = progress_queue.get(timeout=0.1)
-                            
-                            # Handle worker start signals
-                            if folder_name == '_worker_started':
-                                workers_started.add(status)
-                                print(f"Worker {status} confirmed started. Total started: {len(workers_started)}/{num_workers}", flush=True)
-                                continue
-                            
-                            # Normal progress update
+                            folder_name, success = progress_queue.get(timeout=0.1)
                             completed += 1
                             pbar.update(1)
                             pbar.set_postfix({'current': folder_name[:30]})
-                            no_progress_count = 0  # Reset counter on progress
                         except Empty:
-                            # No progress in this iteration (timeout)
-                            no_progress_count += 1
-                            
-                            # Check if workers are done
                             if result.ready():
                                 # Process any remaining items
                                 while True:
                                     try:
                                         folder_name, success = progress_queue.get_nowait()
-                                        if folder_name != '_worker_started':
-                                            completed += 1
-                                            pbar.update(1)
+                                        completed += 1
+                                        pbar.update(1)
                                     except (Empty, ValueError):
                                         break
                                 break
-                            
-                            # If no progress for too long, check if workers are still alive
-                            if no_progress_count >= max_no_progress:
-                                print(f"\nWarning: No progress for {max_no_progress * 0.1:.1f}s.", flush=True)
-                                print(f"Workers started: {len(workers_started)}/{num_workers}", flush=True)
-                                print(f"Completed samples: {completed}/{len(folders)}", flush=True)
-                                print("Check if training processes are running with: ps aux | grep train.py", flush=True)
-                                no_progress_count = 0  # Reset to avoid spam
                     except KeyboardInterrupt:
                         print("\nInterrupted by user. Terminating workers...", flush=True)
                         pool.terminate()
@@ -249,7 +185,6 @@ def run_combined_parallel(args):
                         raise
                     except Exception as e:
                         print(f"\nError in progress monitoring: {e}", flush=True)
-                        # Continue monitoring
             
             # Wait for all workers to complete
             try:
