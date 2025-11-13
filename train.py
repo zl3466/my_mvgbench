@@ -253,7 +253,7 @@ if __name__ == "__main__":
         args.model_path = out_dir
         try:
             training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations,
-                     args.checkpoint_iterations, args.start_checkpoint, args.debug_from, progress_vis=len(folders)==1, lib=args.lib)
+                     args.checkpoint_iterations, args.start_checkpoint, args.debug_from, progress_vis=not args.quiet, lib=args.lib)
         except Exception as e:
             print(f"Error when optimizing {out_dir}: error: {e}")
             print(traceback.format_exc())
