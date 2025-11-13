@@ -7,6 +7,10 @@ import os, sys
 from glob import glob
 import os.path as osp
 import multiprocessing as mp
+try:
+    from queue import Empty
+except ImportError:
+    from Queue import Empty  # Python 2 compatibility
 import time
 import subprocess
 
@@ -128,33 +132,55 @@ def run_combined_parallel(args):
         with mp.Pool(processes=num_workers) as pool:
             result = pool.map_async(process_sample_batch, worker_args)
             
-            # Monitor progress
+            # Monitor progress with timeout
             completed = 0
+            no_progress_count = 0
+            max_no_progress = 100  # 10 seconds without progress before checking if workers are stuck
+            
             with tqdm(total=len(folders), desc="Processing samples") as pbar:
                 while completed < len(folders):
                     try:
-                        while not progress_queue.empty():
-                            folder_name, success = progress_queue.get_nowait()
+                        # Try to get progress update with timeout
+                        try:
+                            folder_name, success = progress_queue.get(timeout=0.1)
                             completed += 1
                             pbar.update(1)
                             pbar.set_postfix({'current': folder_name[:30]})
-                    except:
-                        pass
-                    
-                    if result.ready():
-                        # Process remaining items
-                        while not progress_queue.empty():
-                            try:
-                                progress_queue.get_nowait()
-                                completed += 1
-                                pbar.update(1)
-                            except:
+                            no_progress_count = 0  # Reset counter on progress
+                        except Empty:
+                            # No progress in this iteration (timeout)
+                            no_progress_count += 1
+                            
+                            # Check if workers are done
+                            if result.ready():
+                                # Process any remaining items
+                                while True:
+                                    try:
+                                        folder_name, success = progress_queue.get_nowait()
+                                        completed += 1
+                                        pbar.update(1)
+                                    except (Empty, ValueError):
+                                        break
                                 break
-                        break
-                    
-                    time.sleep(0.1)
+                            
+                            # If no progress for too long, check if workers are still alive
+                            if no_progress_count >= max_no_progress:
+                                print(f"\nWarning: No progress for {max_no_progress * 0.1:.1f}s. Workers may be stuck.", flush=True)
+                                no_progress_count = 0  # Reset to avoid spam
+                    except KeyboardInterrupt:
+                        print("\nInterrupted by user. Terminating workers...", flush=True)
+                        pool.terminate()
+                        pool.join()
+                        raise
+                    except Exception as e:
+                        print(f"\nError in progress monitoring: {e}", flush=True)
+                        # Continue monitoring
             
-            result.get()
+            # Wait for all workers to complete
+            try:
+                result.get(timeout=1)
+            except:
+                pass  # Workers should be done by now
     else:
         # Sequential processing
         base_port = 6000
