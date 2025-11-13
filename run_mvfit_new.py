@@ -101,9 +101,10 @@ def run_combined_parallel(args):
             print(f"  Worker {i}: {len(batch)} samples - {', '.join(batch_names[:3])}{'...' if len(batch_names) > 3 else ''}")
         print()
         
-        # Setup parallel processing
+        # Setup parallel processing with Manager for Queue sharing
         base_port = 6000
-        progress_queue = mp.Queue()
+        manager = mp.Manager()
+        progress_queue = manager.Queue()
         worker_args = [(batch, args_dict, i, base_port, progress_queue) for i, batch in enumerate(batches)]
         
         # Process in parallel with progress tracking
