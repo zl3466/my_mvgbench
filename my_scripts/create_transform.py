@@ -108,7 +108,7 @@ FOV_DEGREES = 30
 camera_angle_x = math.radians(FOV_DEGREES)  # Convert horizontal FOV to radians
 
 input_dir = "/Users/zhihengli/Downloads/mvgbench_dataset"
-output_dir = "/Users/zhihengli/Downloads/mvgbench_dataset/run1"
+output_dir = "/Users/zhihengli/Downloads/mvgbench_dataset/run1_mini/run1"
 # batch_name = "v5_mini"
 view_idx_list = [1, 3, 5, 7]
 input_jsonl_list = sorted(glob(f"{input_dir}/v5_mini/results_gpu*.jsonl"))
@@ -126,7 +126,7 @@ print(f"Loaded {len(all_entries)} entries from {len(input_jsonl_list)} JSONL fil
 print(f"Sample IDs range: {min(e.get('sample_id', 0) for e in all_entries)} to {max(e.get('sample_id', 0) for e in all_entries)}")
 
 # for each object sample
-for sample_record in tqdm(all_entries, desc="Processing samples"):
+for sample_record in tqdm(all_entries[:10], desc="Processing samples"):
     sample_id = sample_record['sample_id']
     lookat_pos = np.array(sample_record['lookat_pos'])
 
@@ -352,8 +352,8 @@ for sample_record in tqdm(all_entries, desc="Processing samples"):
         ]
     }
     
-    first_img_name_without_ext = os.path.splitext(final_state_img_list_odd[0])[0]
-    first_img_ext = os.path.splitext(final_state_img_list_odd[0])[1]
+    first_img_name_without_ext = os.path.splitext(os.path.basename(final_state_img_list_odd[0]))[0]
+    first_img_ext = os.path.splitext(os.path.basename(final_state_img_list_odd[0]))[1]
     transforms_test_odd = {
         "camera_angle_x": camera_angle_x,
         "frames": [

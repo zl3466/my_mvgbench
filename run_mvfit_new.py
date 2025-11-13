@@ -8,6 +8,7 @@ from glob import glob
 import os.path as osp
 import multiprocessing as mp
 import time
+import subprocess
 
 import numpy as np
 from tqdm import tqdm
@@ -18,26 +19,28 @@ def process_single_sample(folder, args_dict, worker_id, port):
     """Process a single sample: train then render"""
     folder_name = osp.basename(folder)
     
-    # Train
-    train_cmd = f'python train.py --port {port} -s "{folder}" -lib lgm'
+    # Train - use subprocess to ensure proper process isolation
+    train_cmd = ['python', 'train.py', '--port', str(port), '-s', folder, '-lib', 'lgm']
     if not args_dict.get('debug', False):
-        train_cmd += ' --quiet '
+        train_cmd.append('--quiet')
     if args_dict.get('white_background', False):
-        train_cmd += ' --white_background '
+        train_cmd.append('--white_background')
     
-    code = os.system(train_cmd)
-    if code != 0:
-        print(f"Error training {folder_name} (worker {worker_id})")
+    # Run training and capture output
+    result = subprocess.run(train_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Error training {folder_name} (worker {worker_id}): {result.stderr[:200]}")
         return False
     
     # Render
-    render_cmd = f'python render.py -m "{folder}" --resolution 256 --elev_offset {args_dict.get("elev_offset", -10)}'
+    render_cmd = ['python', 'render.py', '-m', folder, '--resolution', '256', 
+                  '--elev_offset', str(args_dict.get('elev_offset', -10))]
     if not args_dict.get('debug', False):
-        render_cmd += ' --quiet '
+        render_cmd.append('--quiet')
     
-    code = os.system(render_cmd)
-    if code != 0:
-        print(f"Error rendering {folder_name} (worker {worker_id})")
+    result = subprocess.run(render_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Error rendering {folder_name} (worker {worker_id}): {result.stderr[:200]}")
         return False
     
     return True
@@ -47,10 +50,17 @@ def process_sample_batch(args_tuple):
     sample_folders, args_dict, worker_id, base_port, progress_queue = args_tuple
     worker_port = base_port + worker_id
     
+    # Log worker start
+    print(f"Worker {worker_id} started processing {len(sample_folders)} samples (PID: {os.getpid()})", flush=True)
+    
     for folder in sample_folders:
+        folder_name = osp.basename(folder)
+        start_time = time.time()
         success = process_single_sample(folder, args_dict, worker_id, worker_port)
+        elapsed = time.time() - start_time
+        print(f"Worker {worker_id} completed {folder_name} in {elapsed:.1f}s", flush=True)
+        
         if progress_queue:
-            folder_name = osp.basename(folder)
             progress_queue.put((folder_name, success))
 
 def run_combined_parallel(args):
@@ -79,23 +89,30 @@ def run_combined_parallel(args):
         'elev_offset': args.elev_offset,
     }
     
-    # Determine number of workers
+    # Determine number of workers based on available CPUs
+    # Each worker needs at least 1 CPU core, and we want some headroom for the main process
+    available_cpus = mp.cpu_count()
+    
     if args.num_workers > 0:
         num_workers = args.num_workers
     else:
-        num_workers = min(args.max_workers, len(folders), 8)
+        # Limit workers to available CPUs (leave 1-2 CPUs for main process and system)
+        max_workers_by_cpu = max(1, available_cpus - 2)
+        num_workers = min(args.max_workers, len(folders), max_workers_by_cpu, 8)
         if len(folders) < 4:
             num_workers = len(folders)
     
     if num_workers > 1:
-        print(f"Using {num_workers} workers on GPU 0")
+        print(f"Available CPUs: {available_cpus}, Using {num_workers} workers on GPU 0")
+        print(f"NOTE: Multiple processes sharing one GPU may serialize if GPU memory is limited.")
+        print(f"      Each training process needs GPU memory - monitor with 'nvidia-smi' to verify parallel execution.\n")
         
         # Split folders into batches
         batch_size = max(1, len(folders) // num_workers)
         batches = [folders[i:i + batch_size] for i in range(0, len(folders), batch_size)]
         
         # Print batch distribution
-        print(f"\nBatch distribution:")
+        print(f"Batch distribution:")
         for i, batch in enumerate(batches):
             batch_names = [osp.basename(f) for f in batch]
             print(f"  Worker {i}: {len(batch)} samples - {', '.join(batch_names[:3])}{'...' if len(batch_names) > 3 else ''}")
@@ -212,9 +229,9 @@ if __name__ == '__main__':
     parser.add_argument('--parallel', default=False, action='store_true', 
                         help='Enable parallel processing of multiple samples on the same GPU')
     parser.add_argument('--num_workers', type=int, default=0,
-                        help='Number of parallel workers (0 = auto-detect, default: up to 8)')
+                        help='Number of parallel workers (0 = auto-detect based on available CPUs, default: up to 8)')
     parser.add_argument('--max_workers', type=int, default=8,
-                        help='Maximum number of workers to use (default: 8)')
+                        help='Maximum number of workers to use (default: 8, limited by available CPUs)')
 
     args = parser.parse_args()
 
