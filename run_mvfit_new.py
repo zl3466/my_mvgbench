@@ -30,10 +30,20 @@ def process_single_sample(folder, args_dict, worker_id, port):
     if args_dict.get('white_background', False):
         train_cmd.append('--white_background')
     
-    # Run training and capture output
-    result = subprocess.run(train_cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Error training {folder_name} (worker {worker_id}): {result.stderr[:200]}")
+    print(f"Worker {worker_id} running train command: {' '.join(train_cmd)}", flush=True)
+    
+    # Run training - don't capture output to see it in real-time, but redirect stderr
+    try:
+        result = subprocess.run(train_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+                               text=True, timeout=3600)  # 1 hour timeout per training
+        if result.returncode != 0:
+            print(f"Error training {folder_name} (worker {worker_id}): {result.stderr[:500]}", flush=True)
+            return False
+    except subprocess.TimeoutExpired:
+        print(f"Timeout training {folder_name} (worker {worker_id})", flush=True)
+        return False
+    except Exception as e:
+        print(f"Exception training {folder_name} (worker {worker_id}): {e}", flush=True)
         return False
     
     # Render
@@ -42,9 +52,19 @@ def process_single_sample(folder, args_dict, worker_id, port):
     if not args_dict.get('debug', False):
         render_cmd.append('--quiet')
     
-    result = subprocess.run(render_cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Error rendering {folder_name} (worker {worker_id}): {result.stderr[:200]}")
+    print(f"Worker {worker_id} running render command: {' '.join(render_cmd)}", flush=True)
+    
+    try:
+        result = subprocess.run(render_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+                               text=True, timeout=600)  # 10 min timeout per render
+        if result.returncode != 0:
+            print(f"Error rendering {folder_name} (worker {worker_id}): {result.stderr[:500]}", flush=True)
+            return False
+    except subprocess.TimeoutExpired:
+        print(f"Timeout rendering {folder_name} (worker {worker_id})", flush=True)
+        return False
+    except Exception as e:
+        print(f"Exception rendering {folder_name} (worker {worker_id}): {e}", flush=True)
         return False
     
     return True
@@ -54,18 +74,36 @@ def process_sample_batch(args_tuple):
     sample_folders, args_dict, worker_id, base_port, progress_queue = args_tuple
     worker_port = base_port + worker_id
     
-    # Log worker start
-    print(f"Worker {worker_id} started processing {len(sample_folders)} samples (PID: {os.getpid()})", flush=True)
-    
-    for folder in sample_folders:
-        folder_name = osp.basename(folder)
-        start_time = time.time()
-        success = process_single_sample(folder, args_dict, worker_id, worker_port)
-        elapsed = time.time() - start_time
-        print(f"Worker {worker_id} completed {folder_name} in {elapsed:.1f}s", flush=True)
-        
+    try:
+        # Log worker start and signal that worker is alive
+        print(f"Worker {worker_id} started processing {len(sample_folders)} samples (PID: {os.getpid()})", flush=True)
         if progress_queue:
-            progress_queue.put((folder_name, success))
+            progress_queue.put(('_worker_started', worker_id))
+        
+        for folder in sample_folders:
+            folder_name = osp.basename(folder)
+            print(f"Worker {worker_id} starting {folder_name}...", flush=True)
+            start_time = time.time()
+            
+            try:
+                success = process_single_sample(folder, args_dict, worker_id, worker_port)
+                elapsed = time.time() - start_time
+                print(f"Worker {worker_id} completed {folder_name} in {elapsed:.1f}s", flush=True)
+                
+                if progress_queue:
+                    progress_queue.put((folder_name, success))
+            except Exception as e:
+                print(f"Worker {worker_id} ERROR processing {folder_name}: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                if progress_queue:
+                    progress_queue.put((folder_name, False))
+        
+        print(f"Worker {worker_id} finished all samples", flush=True)
+    except Exception as e:
+        print(f"Worker {worker_id} FATAL ERROR: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
 
 def run_combined_parallel(args):
     """Process samples in parallel using multiple workers on the same GPU"""
@@ -137,12 +175,25 @@ def run_combined_parallel(args):
             no_progress_count = 0
             max_no_progress = 100  # 10 seconds without progress before checking if workers are stuck
             
+            # Wait a moment for workers to start
+            print("Waiting for workers to start...", flush=True)
+            time.sleep(2)
+            
             with tqdm(total=len(folders), desc="Processing samples") as pbar:
+                workers_started = set()
                 while completed < len(folders):
                     try:
                         # Try to get progress update with timeout
                         try:
-                            folder_name, success = progress_queue.get(timeout=0.1)
+                            folder_name, status = progress_queue.get(timeout=0.1)
+                            
+                            # Handle worker start signals
+                            if folder_name == '_worker_started':
+                                workers_started.add(status)
+                                print(f"Worker {status} confirmed started. Total started: {len(workers_started)}/{num_workers}", flush=True)
+                                continue
+                            
+                            # Normal progress update
                             completed += 1
                             pbar.update(1)
                             pbar.set_postfix({'current': folder_name[:30]})
@@ -157,15 +208,19 @@ def run_combined_parallel(args):
                                 while True:
                                     try:
                                         folder_name, success = progress_queue.get_nowait()
-                                        completed += 1
-                                        pbar.update(1)
+                                        if folder_name != '_worker_started':
+                                            completed += 1
+                                            pbar.update(1)
                                     except (Empty, ValueError):
                                         break
                                 break
                             
                             # If no progress for too long, check if workers are still alive
                             if no_progress_count >= max_no_progress:
-                                print(f"\nWarning: No progress for {max_no_progress * 0.1:.1f}s. Workers may be stuck.", flush=True)
+                                print(f"\nWarning: No progress for {max_no_progress * 0.1:.1f}s.", flush=True)
+                                print(f"Workers started: {len(workers_started)}/{num_workers}", flush=True)
+                                print(f"Completed samples: {completed}/{len(folders)}", flush=True)
+                                print("Check if training processes are running with: ps aux | grep train.py", flush=True)
                                 no_progress_count = 0  # Reset to avoid spam
                     except KeyboardInterrupt:
                         print("\nInterrupted by user. Terminating workers...", flush=True)
