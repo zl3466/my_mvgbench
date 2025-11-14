@@ -107,11 +107,12 @@ orbital_angles_degrees_8 = [0, 45, 90, 135, 180, 225, 270, 315]
 FOV_DEGREES = 30
 camera_angle_x = math.radians(FOV_DEGREES)  # Convert horizontal FOV to radians
 
-input_dir = "/Users/zhihengli/Downloads/mvgbench_dataset"
-output_dir = "/Users/zhihengli/Downloads/mvgbench_dataset/run1_mini/run1"
+run_name = "before"
+input_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/{run_name}"
+output_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/run_2/{run_name}_mini"
 # batch_name = "v5_mini"
 view_idx_list = [1, 3, 5, 7]
-input_jsonl_list = sorted(glob(f"{input_dir}/v5_mini/results_gpu*.jsonl"))
+input_jsonl_list = sorted(glob(f"/Users/zhihengli/Downloads/mvgbench_dataset/before/v5_mini/results_gpu*.jsonl"))
 
 # Load all entries from all JSONL files
 all_entries = []
@@ -126,7 +127,8 @@ print(f"Loaded {len(all_entries)} entries from {len(input_jsonl_list)} JSONL fil
 print(f"Sample IDs range: {min(e.get('sample_id', 0) for e in all_entries)} to {max(e.get('sample_id', 0) for e in all_entries)}")
 
 # for each object sample
-for sample_record in tqdm(all_entries[:10], desc="Processing samples"):
+# for sample_record in tqdm(all_entries[:4], desc="Processing samples"):
+for sample_record in tqdm(all_entries, desc="Processing samples"):
     sample_id = sample_record['sample_id']
     lookat_pos = np.array(sample_record['lookat_pos'])
 
@@ -182,10 +184,10 @@ for sample_record in tqdm(all_entries[:10], desc="Processing samples"):
     
     
     # copy images into output_dir
-    final_state_even_folder = f"{output_dir}_final_even/{sample_id}"
-    final_state_odd_folder = f"{output_dir}_final_odd/{sample_id}"
-    middle_state_even_folder = f"{output_dir}_middle_even/{sample_id}"
-    middle_state_odd_folder = f"{output_dir}_middle_odd/{sample_id}"
+    final_state_even_folder = f"{output_dir}/{run_name}_final_even/{sample_id}"
+    final_state_odd_folder = f"{output_dir}/{run_name}_final_odd/{sample_id}"
+    middle_state_even_folder = f"{output_dir}/{run_name}_middle_even/{sample_id}"
+    middle_state_odd_folder = f"{output_dir}/{run_name}_middle_odd/{sample_id}"
     os.makedirs(final_state_even_folder, exist_ok=True)
     os.makedirs(final_state_odd_folder, exist_ok=True)
     os.makedirs(middle_state_even_folder, exist_ok=True)

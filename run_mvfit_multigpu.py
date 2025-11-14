@@ -89,14 +89,35 @@ def process_single_sample(folder, args_dict, gpu_id, port):
     
     return True
 
-def process_sample_batch(args_tuple):
-    """Process a batch of samples assigned to a worker on a specific GPU"""
-    sample_folders, args_dict, gpu_id, base_port, progress_queue = args_tuple
-    worker_port = base_port + gpu_id
+def worker_process(args_tuple):
+    """Worker process that pulls folders from a queue and processes them on a specific GPU"""
+    work_queue, args_dict, gpu_id, base_port, progress_queue = args_tuple
     
-    try:
-        for folder in sample_folders:
+    # Set CUDA_VISIBLE_DEVICES for this worker process
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+    
+    # Each worker gets a range of ports to avoid conflicts
+    # Ports: base_port + gpu_id * 100 + [0-99] for this GPU
+    port_base = base_port + gpu_id * 100
+    port_counter = 0
+    
+    while True:
+        try:
+            # Get next folder from queue (with timeout to check for sentinel)
+            try:
+                folder = work_queue.get(timeout=1)
+            except Empty:
+                continue
+            
+            # Check for sentinel value indicating no more work
+            if folder is None:
+                break
+            
             folder_name = osp.basename(folder)
+            # Assign unique port for this subprocess
+            worker_port = port_base + (port_counter % 100)
+            port_counter += 1
+            
             try:
                 success = process_single_sample(folder, args_dict, gpu_id, worker_port)
                 if progress_queue:
@@ -105,8 +126,10 @@ def process_sample_batch(args_tuple):
                 print(f"GPU {gpu_id} ERROR processing {folder_name}: {e}", flush=True)
                 if progress_queue:
                     progress_queue.put((folder_name, False, gpu_id))
-    except Exception as e:
-        print(f"GPU {gpu_id} FATAL ERROR: {e}", flush=True)
+            finally:
+                work_queue.task_done()
+        except Exception as e:
+            print(f"GPU {gpu_id} FATAL ERROR: {e}", flush=True)
 
 def run_combined_multigpu(args):
     """Process samples in parallel using multiple GPUs"""
@@ -153,60 +176,64 @@ def run_combined_multigpu(args):
     }
     
     if num_gpus_to_use > 1:
-        # Split folders into batches - one batch per GPU
-        batch_size = max(1, len(folders) // num_gpus_to_use)
-        batches = []
-        for i in range(num_gpus_to_use):
-            start_idx = i * batch_size
-            end_idx = start_idx + batch_size if i < num_gpus_to_use - 1 else len(folders)
-            if start_idx < len(folders):
-                batches.append(folders[start_idx:end_idx])
-        
-        # Setup parallel processing with Manager for Queue sharing
+        # Use a work queue for dynamic load balancing
+        # Workers pull folders as they become available
         base_port = 6000
         manager = mp.Manager()
+        work_queue = manager.Queue()
         progress_queue = manager.Queue()
-        worker_args = [(batch, args_dict, i, base_port, progress_queue) for i, batch in enumerate(batches)]
         
-        # Process in parallel with progress tracking
-        with mp.Pool(processes=num_gpus_to_use) as pool:
-            result = pool.map_async(process_sample_batch, worker_args)
-            
-            # Monitor progress
-            completed = 0
+        # Put all folders into the work queue
+        for folder in folders:
+            work_queue.put(folder)
+        
+        # Add sentinel values to signal workers to stop
+        for _ in range(num_gpus_to_use):
+            work_queue.put(None)
+        
+        # Create worker processes
+        worker_args = [(work_queue, args_dict, i, base_port, progress_queue) for i in range(num_gpus_to_use)]
+        processes = []
+        
+        for args_tuple in worker_args:
+            p = mp.Process(target=worker_process, args=(args_tuple,))
+            p.start()
+            processes.append(p)
+        
+        # Monitor progress
+        completed = 0
+        try:
             with tqdm(total=len(folders), desc="Processing samples") as pbar:
                 while completed < len(folders):
                     try:
-                        try:
-                            folder_name, success, gpu_id = progress_queue.get(timeout=0.1)
-                            completed += 1
-                            status = "✓" if success else "✗"
-                            pbar.update(1)
-                            pbar.set_postfix({'current': folder_name[:30], 'GPU': gpu_id, 'status': status})
-                        except Empty:
-                            if result.ready():
-                                # Process any remaining items
-                                while True:
-                                    try:
-                                        folder_name, success, gpu_id = progress_queue.get_nowait()
-                                        completed += 1
-                                        pbar.update(1)
-                                    except (Empty, ValueError):
-                                        break
-                                break
-                    except KeyboardInterrupt:
-                        print("\nInterrupted by user. Terminating workers...", flush=True)
-                        pool.terminate()
-                        pool.join()
-                        raise
-                    except Exception as e:
-                        print(f"\nError in progress monitoring: {e}", flush=True)
-            
-            # Wait for all workers to complete
-            try:
-                result.get(timeout=1)
-            except:
-                pass  # Workers should be done by now
+                        folder_name, success, gpu_id = progress_queue.get(timeout=0.5)
+                        completed += 1
+                        status = "✓" if success else "✗"
+                        pbar.update(1)
+                        pbar.set_postfix({'current': folder_name[:30], 'GPU': gpu_id, 'status': status})
+                    except Empty:
+                        # Check if any processes are still alive
+                        if not any(p.is_alive() for p in processes):
+                            # Process any remaining items
+                            while True:
+                                try:
+                                    folder_name, success, gpu_id = progress_queue.get_nowait()
+                                    completed += 1
+                                    pbar.update(1)
+                                except (Empty, ValueError):
+                                    break
+                            break
+        except KeyboardInterrupt:
+            print("\nInterrupted by user. Terminating workers...", flush=True)
+            for p in processes:
+                p.terminate()
+            for p in processes:
+                p.join()
+            raise
+        
+        # Wait for all workers to complete
+        for p in processes:
+            p.join()
     else:
         # Single GPU processing
         base_port = 6000
