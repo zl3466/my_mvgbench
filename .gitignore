@@ -1,0 +1,12 @@
+cat >> .gitignore << 'EOF'
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+
+# Mac
+.DS_Store
+EOF
