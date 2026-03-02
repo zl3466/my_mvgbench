@@ -109,7 +109,7 @@ camera_angle_x = math.radians(FOV_DEGREES)  # Convert horizontal FOV to radians
 
 run_name = "zebra"
 input_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/{run_name}"
-output_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/run_2/{run_name}"
+output_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/run_{run_name}"
 # batch_name = "v5_mini"
 view_idx_list = [1, 3, 5, 7]
 if run_name == "before":
@@ -173,11 +173,14 @@ for sample_record in tqdm(all_entries, desc="Processing samples"):
             img_folder = f"{input_dir}/v{view_idx}_mini_after/output_images/{sample_id}"
         elif run_name == "zebra":
             img_folder = f"{input_dir}/Zebra_CoT_{view_idx}/output_images/{sample_id}"
-
+        if not os.path.exists(img_folder):
+            print(f"Image folder {img_folder} does not exist")
+            continue
         img_list = sorted(
             [fname for fname in os.listdir(img_folder) if fname.startswith('output_image_') and fname.lower().endswith('.png')],
             key=lambda f: int(''.join(filter(str.isdigit, f)))
         )
+
         final_state_img = img_list[-1] if len(img_list) < 10 else img_list[9]
         middle_state_img = img_list[len(img_list) // 2]
 

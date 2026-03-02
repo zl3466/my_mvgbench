@@ -107,9 +107,11 @@ orbital_angles_degrees_8 = [0, 45, 90, 135, 180, 225, 270, 315]
 FOV_DEGREES = 30
 camera_angle_x = math.radians(FOV_DEGREES)  # Convert horizontal FOV to radians
 
-run_name = "gpt5"
-input_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/gpt5"
-output_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/run_gpt5"
+run_name = "show"
+# input_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/gpt5"
+# output_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/run_gpt5"
+input_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/show"
+output_dir = f"/Users/zhihengli/Downloads/mvgbench_dataset/run_show"
 
 view_idx_list = [1, 3, 5, 7]
 
@@ -147,7 +149,13 @@ for j in tqdm(range(len(entries)), desc="Processing samples"):
         )
         # transforms.append(c2w)
         img_folder = f"{input_dir}/view_{view_idx}/{sample_id}"
-
+        # print(f"img_folder: {img_folder}")
+        if not os.path.exists(img_folder):
+            print(f"Image folder {img_folder} does not exist")
+            continue
+        if len(os.listdir(img_folder)) == 0:
+            print(f"Image folder {img_folder} is empty")
+            continue
         img_list = sorted(
             [fname for fname in os.listdir(img_folder) if fname.startswith('output_image_') and fname.lower().endswith('.png')],
             key=lambda f: int(''.join(filter(str.isdigit, f)))

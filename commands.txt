@@ -41,14 +41,26 @@ python eval/eval_consistency.py \
 
 
 # nyu hpc commands
+https://microsoft.com/devicelogin
 
+040812Ybq!!!!!!
+
+ssh by2593@torch
 ssh by2593@greene.hpc.nyu.edu
-cd /scratch/by2593
 
-srun --pty --nodes=1 --ntasks-per-node=1 --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=8:00:00 --account=pr_116_tandon_advanced  /bin/bash
+cd /scratch/by2593
+cd /scratch/by2593/zl3466/github/my_mvgbench
+conda activate mvgbench
+
+srun --pty --nodes=1 --ntasks-per-node=1 --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=4:00:00 --account=pr_116_tandon_advanced  /bin/bash
+srun --pty --nodes=1 --ntasks-per-node=4 --gres=gpu:4 --cpus-per-task=8 --mem=150G --time=12:00:00 --account=pr_116_tandon_advanced  /bin/bash
 
 conda create -p /scratch/by2593/conda/envs/mvgbench python=3.10 -y
 conda activate /scratch/by2593/conda/envs/mvgbench
+
+conda create -p /scratch/by2593/miniconda3/envs/mvgbench python=3.10 -y
+conda activate /scratch/by2593/miniconda3/envs/mvgbench
+pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 --index-url https://download.pytorch.org/whl/cu121
 
 # download dataset
 wget "https://edmond-objstor-prod.s3.gwdg.de/10.17617/3.BXSOPR/1979ec57bd8-d690657823ff?response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27example-eval.zip&response-content-type=application%2Fzip&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20251112T175343Z&X-Amz-SignedHeaders=host&X-Amz-Credential=IH8939PKBM3VLMPVPGKY%2F20251112%2Fdataverse%2Fs3%2Faws4_request&X-Amz-Expires=86400&X-Amz-Signature=7c15ee68190a97fb0669f61a67c3666b0563371ea3d1230131e27d6eacbd8f2d" -O /scratch/by2593/zl3466/dataset/mvgbench/example-eval.zip
@@ -74,9 +86,15 @@ python eval/eval_consistency.py \
 python eval/eval_vlm.py --name_even output/consistency/mini_even --path /vast/by2593/zl3466/model/InternVL2_5-78B
 
 
+=====================================================================
+# convert dataset structure to 3dgs compatible
+python ./my_scripts/create_transform.py
+
+# create dummy image by flipping
+python my_scripts/create_dummy_img.py
 
 
-
+=====================================================================
 # 8 frames
 python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/000/eval_ready/*/*" --white_background -debug
 python eval/eval_consistency.py \
@@ -90,22 +108,262 @@ python eval/eval_consistency.py \
   --name_even output/consistency/4_frames_even
 
 # dummy
-python run_mvfit_new.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run1/run1_final_*/*" --white_background --parallel
+python run_mvfit_new.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run1_mini/run1_final_*/*" --white_background -debug --parallel --num_workers 8
+python run_mvfit_new.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run1/run1_final_*/*" --white_background -debug --parallel
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run1_mini/run1_final_*/*" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run1_mini/run1_final_even/*" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run1_mini/run1_final_odd/*" --white_background -debug
+
 python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run1/run1_final_*/*" --white_background -debug
 python eval/eval_consistency.py \
   --name_odd output/consistency/4_frames_odd \
   --name_even output/consistency/4_frames_even
 
+=====================================================================
+# multi gpu train
+python run_mvfit_multigpu.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run1_mini/run1_final_even/*" --num_gpus 4 -debug
 
+=====================================================================
 rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/final_state/ by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/final_state/
 rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/000/ by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/000/
 rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/eval_ready by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/000/
 rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run1 by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run1_mini by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run_2 by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run_2/after by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2
+
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run_2/before/before_middle_even by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run_2/before/before_middle_odd by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before
+
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run_2/after/after_middle_even by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run_2/after/after_middle_odd by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after
 
 
-# convert dataset structure to 3dgs compatible
-python ./my_scripts/create_transform.py
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run_2 by2593@gh115:/scratch/by2593/zl3466/dataset/
 
-# create dummy image by flipping
-python my_scripts/create_dummy_img.py
 
+
+
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run_gpt5 by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/
+
+
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run_zebra by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/
+
+rsync -avz --progress /Users/zhihengli/Downloads/mvgbench_dataset/run_show.zip by2593@greene.hpc.nyu.edu:/vast/by2593/zl3466/dataset/mvgbench/test_samples/
+
+
+
+
+
+
+
+
+ssh by2593@greene.hpc.nyu.edu
+
+srun --pty --nodes=1 --ntasks-per-node=1 --gres=gpu:a100:1 --cpus-per-task=8 --mem=64G --time=12:00:00 --account=pr_116_tandon_advanced  /bin/bash
+cd /scratch/by2593/zl3466/github/my_mvgbench
+conda activate mvgbench
+
+# before mini
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before_mini/before_final_*/*" --white_background -debug
+
+# before full - process only folders 0-25
+# Since glob doesn't support numeric ranges, we need multiple patterns:
+
+# before
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_final_*/[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_final_*/1[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_final_*/2[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_final_*/3[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_final_*/4[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_final_*/5[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_final_*/6[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_final_*/7[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_final_*/8[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_final_*/9[0-9]" --white_background -debug
+
+
+# before middle
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_middle_*/[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_middle_*/1[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_middle_*/2[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_middle_*/3[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_middle_*/4[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_middle_*/5[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_middle_*/6[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_middle_*/7[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_middle_*/8[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/before/before_middle_*/9[0-9]" --white_background -debug *
+
+==================
+# after
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_final_*/[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_final_*/1[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_final_*/2[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_final_*/3[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_final_*/4[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_final_*/5[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_final_*/6[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_final_*/7[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_final_*/8[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_final_*/9[0-9]" --white_background -debug *
+
+# after middle
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_middle_*/[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_middle_*/1[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_middle_*/2[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_middle_*/3[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_middle_*/4[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_middle_*/5[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_middle_*/6[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_middle_*/7[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_middle_*/8[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_2/after/after_middle_*/9[0-9]" --white_background -debug *
+
+
+==================
+# gpt
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/1[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/2[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/3[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/4[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/5[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/6[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/7[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/8[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/9[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_final_*/100" --white_background -debug *
+
+# gpt middle
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/1[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/2[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/3[0-9]" --white_background -debug 
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/4[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/5[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/6[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/7[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/8[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/9[0-9]" --white_background -debug *
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_gpt5/gpt5_middle_*/100" --white_background -debug
+
+
+==================
+# zebra
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_final_*/[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_final_*/1[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_final_*/2[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_final_*/3[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_final_*/4[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_final_*/5[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_final_*/6[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_final_*/7[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_final_*/8[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_final_*/9[0-9]" --white_background -debug *
+
+# gpt middle
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_middle_*/[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_middle_*/1[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_middle_*/2[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_middle_*/3[0-9]" --white_background -debug 
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_middle_*/4[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_middle_*/5[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_middle_*/6[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_middle_*/7[0-9]" --white_background -debug 
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_middle_*/8[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_zebra/zebra_middle_*/9[0-9]" --white_background -debug *
+
+==================
+# show
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_final_*/[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_final_*/1[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_final_*/2[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_final_*/3[0-9]" --white_background -debug
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_final_*/4[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_final_*/5[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_final_*/6[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_final_*/7[0-9]" --white_background -debug 
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_final_*/8[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_final_*/9[0-9]" --white_background -debug *
+
+# gpt middle
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_middle_*/[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_middle_*/1[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_middle_*/2[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_middle_*/3[0-9]" --white_background -debug 
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_middle_*/4[0-9]" --white_background -debug
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_middle_*/5[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_middle_*/6[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_middle_*/7[0-9]" --white_background -debug 
+
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_middle_*/8[0-9]" --white_background -debug 
+python run_mvfit.py "/vast/by2593/zl3466/dataset/mvgbench/test_samples/run_show/show_middle_*/9[0-9]" --white_background -debug *
+
+
+======================
+# before after
+python eval/eval_consistency.py \
+  --name_odd output/consistency/before_final_odd \
+  --name_even output/consistency/before_final_even
+
+python eval/eval_consistency.py \
+  --name_odd output/consistency/before_middle_odd \
+  --name_even output/consistency/before_middle_even
+
+python eval/eval_consistency.py \
+  --name_odd output/consistency/after_final_odd \
+  --name_even output/consistency/after_final_even
+
+python eval/eval_consistency.py \
+  --name_odd output/consistency/after_middle_odd \
+  --name_even output/consistency/after_middle_even
+
+======================
+# gpt
+python eval/eval_consistency.py \
+  --name_odd output/consistency/gpt5_final_odd \
+  --name_even output/consistency/gpt5_final_even
+
+python eval/eval_consistency.py \
+  --name_odd output/consistency/gpt5_middle_odd \
+  --name_even output/consistency/gpt5_middle_even
+
+======================
+# zebra stage 1+2
+python eval/eval_consistency.py \
+  --name_odd output/consistency/zebra_final_odd \
+  --name_even output/consistency/zebra_final_even
+
+python eval/eval_consistency.py \
+  --name_odd output/consistency/zebra_middle_odd \
+  --name_even output/consistency/zebra_middle_even
+
+
+python eval/eval_consistency.py \
+  --name_odd output/consistency/show_final_odd \
+  --name_even output/consistency/show_final_even
+
+python eval/eval_consistency.py \
+  --name_odd output/consistency/show_middle_odd \
+  --name_even output/consistency/show_middle_even
